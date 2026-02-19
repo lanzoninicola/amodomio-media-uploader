@@ -2,6 +2,78 @@
 
 Microservico para upload de imagens e videos com persistencia em volume de host (`/data`) e entrega publica via Nginx.
 
+## Deploy no Dokploy (passo a passo)
+
+Importante: sao 2 servicos diferentes.
+
+1. `media-api` (uploader)
+- esse servico usa este repositorio no GitHub
+- endpoint publico: `media-api.amodomio.com.br`
+- porta interna da app: `3001`
+
+2. `media-nginx` (origin estatico)
+- esse servico NAO usa este repositorio
+- usar imagem Docker: `nginx:alpine`
+- endpoint publico: `media.amodomio.com.br`
+- porta interna do nginx: `80`
+
+### 1) Configurar `media-api` no Dokploy
+
+1. Criar servico `media-api`.
+2. `Provider`: `GitHub`.
+3. `Repository`: `amodomio-media-uploader`.
+4. `Build Type`: `Dockerfile`.
+5. Campos de build:
+- `Docker File`: `Dockerfile`
+- `Docker Context Path`: `.`
+- `Docker Build Stage`: vazio
+6. `Domains`:
+- dominio: `media-api.amodomio.com.br`
+- `Path`: `/`
+- `Port`: `3001`
+- HTTPS + LetsEncrypt
+7. `Environment`:
+- `UPLOAD_API_KEY` (obrigatoria)
+- `MEDIA_BASE_URL=https://media.amodomio.com.br`
+- opcionais: `TRUST_PROXY_HOPS`, `RATE_LIMIT_*`, `REQUEST_TIMEOUT_MS`, `HEADERS_TIMEOUT_MS`, `KEEP_ALIVE_TIMEOUT_MS`
+8. `Volumes / Mounts`:
+- tipo: `Bind Mount`
+- `Host Path`: `/home/ubuntu/media/data`
+- `Mount Path`: `/data`
+- modo: `RW`
+9. Deploy e testar:
+- `https://media-api.amodomio.com.br/health` -> `{ "ok": true }`
+
+### 2) Configurar `media-nginx` no Dokploy
+
+1. Criar servico `media-nginx`.
+2. `Provider`: `Docker`.
+3. Imagem: `nginx:alpine`.
+4. `Domains`:
+- dominio: `media.amodomio.com.br`
+- `Path`: `/`
+- `Port`: `80`
+- HTTPS + LetsEncrypt
+5. `Volumes / Mounts` (2 mounts):
+- mount 1 (tipo `Bind Mount`):
+  - `Host Path`: `/home/ubuntu/media/data`
+  - `Mount Path`: `/data`
+  - modo: `RO`
+- mount 2 (tipo `Bind Mount`):
+  - `Host Path`: `/home/ubuntu/media/nginx/default.conf`
+  - `Mount Path`: `/etc/nginx/conf.d/default.conf`
+  - modo: `RO`
+6. Redeploy.
+7. Testar:
+- `https://media.amodomio.com.br/health` -> `ok`
+
+### Erros comuns (que geram Bad Gateway)
+
+- Configurar `media-nginx` com `Provider GitHub` apontando para este repo.
+- Colocar dominio `media.amodomio.com.br` com porta `3001` (o correto e `80`).
+- Esquecer de montar `/etc/nginx/conf.d/default.conf`.
+- Usar `File Mount` inline quando queria montar arquivo do host. Para esse caso, usar `Bind Mount`.
+
 ## Variaveis de ambiente
 
 - `UPLOAD_API_KEY` (obrigatoria): chave esperada no header `x-api-key`.
@@ -34,6 +106,60 @@ curl -X POST "http://localhost:3001/upload?kind=image&menuItemId=margherita&slot
 curl -X POST "http://localhost:3001/upload?kind=video&menuItemId=margherita&slot=promo" \
   -H "x-api-key: SUA_CHAVE" \
   -F "file=@promo.mp4"
+```
+
+## Testes de upload em producao (curl)
+
+Defina sua chave:
+
+```bash
+export API_KEY="SUA_CHAVE"
+```
+
+Healthchecks:
+
+```bash
+curl https://media-api.amodomio.com.br/health
+curl https://media.amodomio.com.br/health
+```
+
+Upload de imagem:
+
+```bash
+curl -X POST "https://media-api.amodomio.com.br/upload?kind=image&menuItemId=margherita&slot=cover" \
+  -H "x-api-key: $API_KEY" \
+  -F "file=@cover.jpg"
+```
+
+Upload de video mp4:
+
+```bash
+curl -X POST "https://media-api.amodomio.com.br/upload?kind=video&menuItemId=margherita&slot=promo" \
+  -H "x-api-key: $API_KEY" \
+  -F "file=@promo.mp4"
+```
+
+Teste sem API key (esperado `401`):
+
+```bash
+curl -i -X POST "https://media-api.amodomio.com.br/upload?kind=image&menuItemId=margherita&slot=cover" \
+  -F "file=@cover.jpg"
+```
+
+Teste de mimetype invalido (esperado `415`):
+
+```bash
+curl -i -X POST "https://media-api.amodomio.com.br/upload?kind=image&menuItemId=margherita&slot=cover" \
+  -H "x-api-key: $API_KEY" \
+  -F "file=@arquivo.txt"
+```
+
+Teste de arquivo grande (esperado `413`):
+
+```bash
+curl -i -X POST "https://media-api.amodomio.com.br/upload?kind=image&menuItemId=margherita&slot=cover" \
+  -H "x-api-key: $API_KEY" \
+  -F "file=@imagem-maior-que-10mb.jpg"
 ```
 
 ## Estrutura de paths gerada

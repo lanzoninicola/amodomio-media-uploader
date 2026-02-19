@@ -1,6 +1,7 @@
 @apiBase = https://media-api.amodomio.com.br
 @mediaBase = https://media.amodomio.com.br
-@apiKey = SUA_CHAVE_AQUI
+@apiKey = b7f0c8d8a3b14c2f9e6d1a0c4f2e7b9c8d1f3a6b5e2c9f0a7d4b1c8e6f9a2d3
+
 @menuItemId = margherita
 @imageSlot = cover
 @videoSlot = promo
